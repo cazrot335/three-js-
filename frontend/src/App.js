@@ -1,24 +1,26 @@
 import React, { useEffect, useRef, useState } from "react";
 import * as THREE from "three";
-import axios from "axios";
-import { io } from "socket.io-client";
-
-const socket = io("http://localhost:5000");
 
 const App = () => {
   const mountRef = useRef(null);
-  const [score, setScore] = useState(0);
+  const [gameOver, setGameOver] = useState(false);
 
   useEffect(() => {
     const scene = new THREE.Scene();
-    const camera = new THREE.PerspectiveCamera(75, window.innerWidth / window.innerHeight, 0.1, 1000);
+    const camera = new THREE.PerspectiveCamera(
+      75,
+      window.innerWidth / window.innerHeight,
+      0.1,
+      1000
+    );
     const renderer = new THREE.WebGLRenderer();
-    
     renderer.setSize(window.innerWidth, window.innerHeight);
-    mountRef.current.appendChild(renderer.domElement);
+    if (mountRef.current) {
+      mountRef.current.appendChild(renderer.domElement);
+    }
 
     // Create ground
-    const groundGeometry = new THREE.BoxGeometry(10, 1, 100);
+    const groundGeometry = new THREE.BoxGeometry(20, 1, 100);
     const groundMaterial = new THREE.MeshBasicMaterial({ color: 0x654321 });
     const ground = new THREE.Mesh(groundGeometry, groundMaterial);
     ground.position.y = -2;
@@ -29,10 +31,22 @@ const App = () => {
     const trexMaterial = new THREE.MeshBasicMaterial({ color: 0x00ff00 });
     const trex = new THREE.Mesh(trexGeometry, trexMaterial);
     trex.position.y = 0;
+    trex.position.z = 5;
     scene.add(trex);
 
-    camera.position.z = 5;
+    // Create obstacles (cacti)
+    const obstacleGeometry = new THREE.BoxGeometry(1, 2, 1);
+    const obstacleMaterial = new THREE.MeshBasicMaterial({ color: 0xff0000 });
+    let obstacles = [];
 
+    function spawnObstacle() {
+      const obstacle = new THREE.Mesh(obstacleGeometry, obstacleMaterial);
+      obstacle.position.set(5, 0, 5);
+      scene.add(obstacle);
+      obstacles.push(obstacle);
+    }
+
+    // Jump logic
     let jump = false;
     let velocity = 0;
 
@@ -49,10 +63,33 @@ const App = () => {
       }
     });
 
-    // Game Loop
-    function animate() {
+    // Game loop
+    let speed = 0.05;
+    let lastObstacleSpawn = 0;
+
+    function animate(time) {
+      if (gameOver) return;
+
       requestAnimationFrame(animate);
-      
+
+      // Simulate running by moving ground backward
+      ground.position.x -= speed;
+
+      // Move obstacles toward the T-Rex
+      obstacles.forEach((obstacle) => {
+        obstacle.position.x -= speed;
+      });
+
+      // Remove obstacles that are out of view
+      obstacles = obstacles.filter((obstacle) => obstacle.position.x > -10);
+
+      // Spawn obstacles at intervals
+      if (time - lastObstacleSpawn > 2000) {
+        spawnObstacle();
+        lastObstacleSpawn = time;
+      }
+
+      // Handle jump
       if (jump) {
         trex.position.y += velocity;
         velocity -= 0.005;
@@ -62,28 +99,41 @@ const App = () => {
         }
       }
 
+      // Collision detection
+      obstacles.forEach((obstacle) => {
+        if (
+          trex.position.x < obstacle.position.x + 1 &&
+          trex.position.x + 1 > obstacle.position.x &&
+          trex.position.y < obstacle.position.y + 2 &&
+          trex.position.y + 2 > obstacle.position.y
+        ) {
+          console.log("Game Over!");
+          setGameOver(true);
+        }
+      });
+
       renderer.render(scene, camera);
     }
-    animate();
+
+    animate(0);
 
     return () => {
       if (mountRef.current) {
         mountRef.current.removeChild(renderer.domElement);
       }
     };
-  }, []);
+  }, [gameOver]);
 
-  const submitScore = async () => {
-    await axios.post("http://localhost:5000/score", { playerName: "Player", score });
-    alert("Score submitted!");
+  const restartGame = () => {
+    window.location.reload();
   };
 
   return (
     <div>
-      <h1>T-Rex 3D Game</h1>
+      <h1>3D T-Rex Game</h1>
+      {gameOver && <h2 style={{ color: "red" }}>Game Over! Press Restart</h2>}
       <div ref={mountRef} style={{ width: "100vw", height: "80vh" }} />
-      <button onClick={() => setScore(score + 1)}>Increase Score</button>
-      <button onClick={submitScore}>Submit Score</button>
+      <button onClick={restartGame}>Restart</button>
     </div>
   );
 };
